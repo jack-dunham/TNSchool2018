@@ -108,3 +108,64 @@ function vumpsbloch(a,D)
 
     return ρA
 end
+
+function trace(ρ)
+    return @tensor ρtr[a,b,c,d]:=ρ[a,b,c,d,s,s]
+end
+
+
+function onelocalrho(ρ, χ=size(ρ,1)^2, A=complex(randn(Float64,χ,size(ρ,4),χ)); verbose = true, tol = 1e-6, kwargs...)
+	perm=[1,2,3,4]
+	M=trace(ρ)
+	@tensor NM[]:=M[i,j,i,j]
+	M./=scalar(NM)
+	λ, AL, C, AR, FL, FR = vumps(A, M ; verbose=verbose, tol = tol, kwargs...)
+	@tensor AC[i,j,k]:=AL[i,j,x]*C[x,k]
+	Fnorm = @tensor scalar(FL[c,x,a]*C[a,a']*conj(C)[c,c']*FR[a',x,c'])
+	FL ./= Fnorm # normalize FL and FR: not really necessary
+	FR ./= Fnorm # normalize FL and FR: not really necessary
+	@tensor ϕ[i,ip]:=FL[ϕ,μ,α]*AC[α,β,γ]*FR[γ,ν,η]*conj(AC)[ϕ,ρ,η]*unvec_pepo(ρ)[μ,ρ,ν,β,i,ip]
+	ϕ./=LinearAlgebra.tr(ϕ)
+	#return AC so that it can be reused.
+	return ϕ, AC
+end
+
+
+"""
+Vectorises a size(H)=size(L)-local Liuovillian for Hamiltonian operator H, and Lindblad operator L
+"""
+function vecliuo(H, L)
+    id = Matrix(I,size(H))
+    Hv = -im*(kron(id,H)-kron(transpose(H),id))
+    Dv = (1/2)*(2*kron(conj(L),L) - kron(id,L'L)- kron(transpose(L)conj(L),id))
+    return Hv + Dv
+end
+
+"""
+This applies a Linbladian to a density operator in the normal sense. For testing purposes.
+"""
+function test_appliuo(ρ, H, L)
+    return -im*(H*ρ -ρ*H) + L*ρ*L' -(1/2)*( L'L*ρ +ρ*L'L)
+end
+
+"""
+Constructes a single term in the dissipative transverse Ising model given by
+$$
+\frac{V}{z} \sum{\langle i,j \rangle} Z_i Z_j + \frac{h}{2}\sum_{j} X_j
+$$
+with Lindblad jump operator
+$$
+L_j = \frac{\sqrt{γ}}{2}(Y_j - i Z_j)
+$$
+"""
+function ising_liuo(V::Real,z::Integer,h::Real,γ::Real)
+    Z = [1. 0. ; 0. -1.]
+    Y = [0. im; im 1.]
+    X = [0. 1.;1. 0.]
+    id = Matrix(I,(2,2))
+
+    H = (V/z)*kron(Z,Z) + (h/2)*(kron(X,id)+kron(id,X))
+    L = (sqrt(γ)/2)*(Y - im*Z)
+
+    return H, kron(L,id)+kron(id,L)
+end
